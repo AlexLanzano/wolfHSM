@@ -158,3 +158,8 @@ int wh_DemoClient_KeyWrapBasic(whClientContext* clientContext)
     wc_FreeRng(rng);
     return ret;
 }
+
+int wh_DemoClient_KeyWrapNvm(whClientContext* client)
+{
+    
+}
