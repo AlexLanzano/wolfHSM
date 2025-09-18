@@ -22,6 +22,9 @@
 #include "wolfhsm/wh_server.h"
 #include "wolfhsm/wh_client.h"
 
+int whTest_Client_KeyWrap(whClientContext* ctx);
+int whTest_Client_WriteWrappedKeysToNvm(whClientContext* client, whNvmContext* nvm);
+int whTest_Client_UseWrappedKeysFromNvm(whClientContext* client, whNvmContext* nvm);
 int whTest_KeyWrapClientConfig(whClientConfig* cf);
 
 

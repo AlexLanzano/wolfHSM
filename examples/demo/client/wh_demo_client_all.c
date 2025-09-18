@@ -46,7 +46,7 @@ int wh_DemoClient_All(whClientContext* clientContext)
     }
 #endif
 
-    rc = wh_DemoClient_KeyWrapBasic(clientContext);
+    rc = wh_DemoClient_KeyWrap(clientContext);
     if (rc != 0) {
         return rc;
     }
