@@ -49,49 +49,38 @@ int wh_DemoClient_KeyWrap(whClientContext* client)
         .partition_size = 1024 * 1024,
         .erased_byte = 0xff
     };
-    const whFlashCb flashFileCb[1] = {POSIX_FLASH_FILE_CB};
+    whFlashCb flashFileCb[1] = {POSIX_FLASH_FILE_CB};
 
-    /* NVM Flash Configuration using file-based Flash */
-    whNvmFlashConfig nvmFlashCfg[1] = {{
-        .cb      = flashFileCb,
-        .context = &flashFileCtx,
-        .config  = &flashFileCfg,
-    }};
-    whNvmFlashContext nvmFlashCtx[1] = {0};
-    whNvmCb nvmCb[1] = {WH_NVM_FLASH_CB};
-
-    whNvmConfig nvmCfg[1] = {{
-            .cb = nvmCb,
-            .context = nvmFlashCtx,
-            .config = nvmFlashCfg,
-    }};
-    whNvmContext nvm[1];
-
-    ret = wh_Nvm_Init(nvm, nvmCfg);
+    ret = flashFileCb->Init(&flashFileCtx, &flashFileCfg);
     if (ret != WH_ERROR_OK) {
-        printf("Failed to wh_Nvm_Init %d\n", ret);
+        printf("Failed to flashCb->Init %d\n", ret);
         return ret;
     }
 
+    ret = flashFileCb->WriteUnlock(&flashFileCtx, 0, flashFileCfg.partition_size);
+    if (ret != WH_ERROR_OK) {
+        printf("Failed to flashCb->WriteUnlock %d\n", ret);
+        return ret;
+    }
     ret = whTest_Client_KeyWrap(client);
     if (ret != WH_ERROR_OK) {
         printf("Failed to whTest_Client_KeyWrap %d\n", ret);
         return ret;
     }
 
-    ret = whTest_Client_WriteWrappedKeysToNvm(client, nvm);
+    ret = whTest_Client_WriteWrappedKeysToNvm(client, &flashFileCtx, flashFileCb);
     if (ret != WH_ERROR_OK) {
         printf("Failed to whTest_Client_WriteWrappedKeysToNvm %d\n", ret);
         return ret;
     }
 
-    ret = whTest_Client_UseWrappedKeysFromNvm(client, nvm);
+    ret = whTest_Client_UseWrappedKeysFromNvm(client, &flashFileCtx, flashFileCb);
     if (ret != WH_ERROR_OK) {
         printf("Failed to whTest_Client_UseWrappedKeysFromNvm %d\n", ret);
         return ret;
     }
 
-    wh_Nvm_Cleanup(nvm);
+    flashFileCb->Cleanup(&flashFileCtx);
 
     return ret;
 }

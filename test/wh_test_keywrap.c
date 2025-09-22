@@ -28,6 +28,7 @@
 #include "wolfssl/wolfcrypt/types.h"
 
 #include "wolfhsm/wh_error.h"
+#include "wolfhsm/wh_flash.h"
 
 #ifdef WOLFHSM_CFG_ENABLE_CLIENT
 #include "wolfhsm/wh_client.h"
@@ -49,6 +50,7 @@
 /* AES GCM Specific defines */
 #ifdef HAVE_AESGCM
 
+#define WH_TEST_AESGCM_KEY_OFFSET 0x1000
 #define WH_TEST_AESGCM_KEYID 2
 #define WH_TEST_AES_KEYSIZE 32
 #define WH_TEST_AES_TEXTSIZE 16
@@ -63,6 +65,7 @@
 /* RSA Specific defines */
 #ifndef NO_RSA
 
+#define WH_TEST_RSA_KEY_OFFSET 0x2000
 #define WH_TEST_RSA_KEYID 3
 #define WH_TEST_RSA_KEYSIZE 1766
 #define WH_TEST_RSA_WRAPPED_KEYSIZE                                \
@@ -181,18 +184,16 @@ int whTest_Client_KeyWrap(whClientContext* ctx)
     return ret;
 }
 
-int whTest_KeyWrapClientConfig(whClientConfig* clientCfg, whNvmConfig* nvmCfg)
+int whTest_KeyWrapClientConfig(whClientConfig* clientCfg)
 {
     int             ret       = 0;
     whClientContext client[1] = {0};
-    whNvmContext nvm[1] = {0};
 
-    if (clientCfg == NULL || nvmCfg == NULL) {
+    if (clientCfg == NULL) {
         return WH_ERROR_BADARGS;
     }
 
     WH_TEST_RETURN_ON_FAIL(wh_Client_Init(client, clientCfg));
-    WH_TEST_RETURN_ON_FAIL(wh_Nvm_Init(nvm, nvmCfg));
 
     ret = wh_Client_CommInit(client, NULL, NULL);
     if (ret != 0) {
@@ -214,7 +215,7 @@ cleanup_and_exit:
 }
 
 #ifdef HAVE_AESGCM
-static int _AesGcm_WriteWrappedKeyToNvm(whClientContext* client, whNvmContext* nvm)
+static int _AesGcm_WriteWrappedKeyToNvm(whClientContext* client, void* flashCtx, whFlashCb* flashCb)
 {
     int ret;
     whKeyId serverKekId = WH_TEST_KEKID;
@@ -236,15 +237,6 @@ static int _AesGcm_WriteWrappedKeyToNvm(whClientContext* client, whNvmContext* n
         .len = WH_TEST_AES_KEYSIZE
     };
 
-    /* This is metadata for the wrapped key nvm object that the client will use */
-    whNvmMetadata aesGcmNvmMetadata = {
-        .label = "AES GCM Wrapped Key",
-        .access = WH_NVM_ACCESS_ANY,
-        .flags = WH_NVM_FLAGS_NONE,
-        .id = WH_TEST_AESGCM_KEYID,
-        .len = WH_TEST_AES_WRAPPED_KEYSIZE
-    };
-
     /* Request the server to wrap the AES GCM key using the server KEK */
     ret = wh_Client_KeyWrap(client, WC_CIPHER_AES_GCM, serverKekId, aesGcmKey, sizeof(aesGcmKey),
                             &aesGcmKeyMetadata, aesGcmWrappedKey, sizeof(aesGcmWrappedKey));
@@ -254,7 +246,7 @@ static int _AesGcm_WriteWrappedKeyToNvm(whClientContext* client, whNvmContext* n
     }
 
     /* Write the wrapped AES GCM key to a specified location in NVM */
-    ret = wh_Nvm_AddObject(nvm, &aesGcmNvmMetadata,
+    ret = flashCb->Program(flashCtx, WH_TEST_AESGCM_KEY_OFFSET,
                            sizeof(aesGcmWrappedKey), aesGcmWrappedKey);
     if (ret != 0) {
         WH_ERROR_PRINT("Failed to write AES GCM key to NVM %d\n", ret);
@@ -264,7 +256,7 @@ static int _AesGcm_WriteWrappedKeyToNvm(whClientContext* client, whNvmContext* n
     return ret;
 }
 
-static int _AesGcm_UseWrappedKeyFromNvm(whClientContext* client, whNvmContext* nvm)
+static int _AesGcm_UseWrappedKeyFromNvm(whClientContext* client, void* flashCtx, whFlashCb* flashCb)
 {
     int ret;
     whKeyId serverKekId = WH_TEST_KEKID;
@@ -294,8 +286,8 @@ static int _AesGcm_UseWrappedKeyFromNvm(whClientContext* client, whNvmContext* n
     const uint8_t expected[] = "hello, wolfSSL AES-GCM!";
 
     /* Load wrapped AES GCM key from flash into RAM */
-    ret = wh_Nvm_Read(nvm, WH_TEST_AESGCM_KEYID, 0,
-                      sizeof(aesGcmWrappedKey), aesGcmWrappedKey);
+    ret = flashCb->Read(flashCtx, WH_TEST_AESGCM_KEY_OFFSET,
+                        sizeof(aesGcmWrappedKey), aesGcmWrappedKey);
     if (ret != 0) {
         WH_ERROR_PRINT("Failed to read the AES GCM key from NVM %d\n", ret);
         return ret;
@@ -350,7 +342,7 @@ static int _AesGcm_UseWrappedKeyFromNvm(whClientContext* client, whNvmContext* n
 
 #ifndef NO_RSA
 
-static int _Rsa_WriteWrappedKeyToNvm(whClientContext* client, whNvmContext* nvm)
+static int _Rsa_WriteWrappedKeyToNvm(whClientContext* client, void* flashCtx, whFlashCb* flashCb)
 {
     int ret;
     whKeyId rsaKeyId = WH_TEST_RSA_KEYID;
@@ -513,14 +505,6 @@ static int _Rsa_WriteWrappedKeyToNvm(whClientContext* client, whNvmContext* nvm)
         .len = sizeof(rsaKey)
     };
 
-    whNvmMetadata nvmMetadata = {
-        .label = "RSA 3072 Wrapped Key",
-        .access = WH_NVM_ACCESS_ANY,
-        .flags = WH_NVM_FLAGS_NONE,
-        .id = WH_TEST_RSA_KEYID,
-        .len = WH_TEST_RSA_WRAPPED_KEYSIZE
-    };
-
     /* Request the server to wrap the RSA key using the server KEK */
     ret = wh_Client_KeyWrap(client, WC_CIPHER_AES_GCM, WH_TEST_KEKID, rsaKey, sizeof(rsaKey),
                             &rsaKeyMetadata, rsaWrappedKey, sizeof(rsaWrappedKey));
@@ -530,7 +514,7 @@ static int _Rsa_WriteWrappedKeyToNvm(whClientContext* client, whNvmContext* nvm)
     }
 
     /* Write the wrapped RSA key to a specified location in flash */
-    ret = wh_Nvm_AddObject(nvm, &nvmMetadata,
+    ret = flashCb->Program(flashCtx, WH_TEST_RSA_KEY_OFFSET,
                            sizeof(rsaWrappedKey), rsaWrappedKey);
     if (ret != 0) {
         WH_ERROR_PRINT("Failed to write RSA key to NVM %d\n", ret);
@@ -540,7 +524,7 @@ static int _Rsa_WriteWrappedKeyToNvm(whClientContext* client, whNvmContext* nvm)
     return ret;
 }
 
-static int _Rsa_UseWrappedKeyFromNvm(whClientContext* client, whNvmContext* nvm)
+static int _Rsa_UseWrappedKeyFromNvm(whClientContext* client, void* flashCtx, whFlashCb* flashCb)
 {
     int ret;
     whKeyId serverKekId = WH_TEST_KEKID;
@@ -580,8 +564,8 @@ static int _Rsa_UseWrappedKeyFromNvm(whClientContext* client, whNvmContext* nvm)
     const uint8_t expected[] = "Hello with RSA-3072!";
 
     /* Load wrapped RSA key from flash into RAM */
-    ret = wh_Nvm_Read(nvm, WH_TEST_RSA_KEYID, 0,
-                      sizeof(rsaWrappedKey), rsaWrappedKey);
+    ret = flashCb->Read(flashCtx, WH_TEST_RSA_KEY_OFFSET, 
+                       sizeof(rsaWrappedKey), rsaWrappedKey);
     if (ret != 0) {
         WH_ERROR_PRINT("Failed to read the RSA wrapped key from NVM %d\n", ret);
         return ret;
@@ -631,7 +615,7 @@ static int _Rsa_UseWrappedKeyFromNvm(whClientContext* client, whNvmContext* nvm)
 }
 #endif /* !NO_RSA */
 
-int whTest_Client_WriteWrappedKeysToNvm(whClientContext* client, whNvmContext* nvm)
+int whTest_Client_WriteWrappedKeysToNvm(whClientContext* client, void *flashCtx, whFlashCb* flashCb)
 {
     int ret = WH_ERROR_OK;
 
@@ -642,7 +626,7 @@ int whTest_Client_WriteWrappedKeysToNvm(whClientContext* client, whNvmContext* n
     }
 
 #ifdef HAVE_AESGCM
-    ret = _AesGcm_WriteWrappedKeyToNvm(client, nvm);
+    ret = _AesGcm_WriteWrappedKeyToNvm(client, flashCtx, flashCb);
     if (ret != WH_ERROR_OK) {
         WH_ERROR_PRINT("Failed to _AesGcm_WriteWrappedKeyToNvm %d\n", ret);
         return ret;
@@ -650,7 +634,7 @@ int whTest_Client_WriteWrappedKeysToNvm(whClientContext* client, whNvmContext* n
 #endif /* HAVE_AESGCM */
 
 #ifndef NO_RSA
-    ret = _Rsa_WriteWrappedKeyToNvm(client, nvm);
+    ret = _Rsa_WriteWrappedKeyToNvm(client, flashCtx, flashCb);
     if (ret != WH_ERROR_OK) {
         WH_ERROR_PRINT("Failed to _WriteWrappedAesGcmKeyToFlash %d\n", ret);
         return ret;
@@ -662,14 +646,14 @@ int whTest_Client_WriteWrappedKeysToNvm(whClientContext* client, whNvmContext* n
     return WH_ERROR_OK;
 }
 
-int whTest_Client_UseWrappedKeysFromNvm(whClientContext* client, whNvmContext* nvm)
+int whTest_Client_UseWrappedKeysFromNvm(whClientContext* client, void* flashCtx, whFlashCb* flashCb)
 {
     int ret = WH_ERROR_OK;
     
     _InitServerKek(client);
 
 #ifdef HAVE_AESGCM
-    ret = _AesGcm_UseWrappedKeyFromNvm(client, nvm);
+    ret = _AesGcm_UseWrappedKeyFromNvm(client, flashCtx, flashCb);
     if (ret != WH_ERROR_OK) {
         WH_ERROR_PRINT("Failed to _AesGcm_UseWrappedKeyToNvm %d\n", ret);
         return ret;
@@ -677,7 +661,7 @@ int whTest_Client_UseWrappedKeysFromNvm(whClientContext* client, whNvmContext* n
 #endif /* HAVE_AESGCM */
 
 #ifndef NO_RSA
-    ret = _Rsa_UseWrappedKeyFromNvm(client, nvm);
+    ret = _Rsa_UseWrappedKeyFromNvm(client, flashCtx, flashCb);
     if (ret != WH_ERROR_OK) {
         WH_ERROR_PRINT("Failed to _UseWrappedAesGcmKeyToFlash %d\n", ret);
         return ret;

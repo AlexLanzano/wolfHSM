@@ -21,10 +21,11 @@
 
 #include "wolfhsm/wh_server.h"
 #include "wolfhsm/wh_client.h"
+#include "wolfhsm/wh_flash.h"
 
 int whTest_Client_KeyWrap(whClientContext* ctx);
-int whTest_Client_WriteWrappedKeysToNvm(whClientContext* client, whNvmContext* nvm);
-int whTest_Client_UseWrappedKeysFromNvm(whClientContext* client, whNvmContext* nvm);
+int whTest_Client_WriteWrappedKeysToNvm(whClientContext* client, void* flashCtx, whFlashCb* flashCb);
+int whTest_Client_UseWrappedKeysFromNvm(whClientContext* client, void* flashCtx, whFlashCb* flashCb);
 int whTest_KeyWrapClientConfig(whClientConfig* cf);
 
 
