@@ -253,6 +253,13 @@ static int _AesGcm_WriteWrappedKeyToNvm(whClientContext* client, void* flashCtx,
         return ret;
     }
 
+    ret = flashCb->Verify(flashCtx, WH_TEST_AESGCM_KEY_OFFSET,
+                          sizeof(aesGcmWrappedKey), aesGcmWrappedKey);
+    if (ret != 0) {
+        WH_ERROR_PRINT("Failed to verify the AES GCM key written to flash %d\n", ret);
+        return ret;
+    }
+
     return ret;
 }
 
@@ -518,6 +525,13 @@ static int _Rsa_WriteWrappedKeyToNvm(whClientContext* client, void* flashCtx, wh
                            sizeof(rsaWrappedKey), rsaWrappedKey);
     if (ret != 0) {
         WH_ERROR_PRINT("Failed to write RSA key to NVM %d\n", ret);
+        return ret;
+    }
+
+    ret = flashCb->Verify(flashCtx, WH_TEST_RSA_KEY_OFFSET,
+                          sizeof(rsaWrappedKey), rsaWrappedKey);
+    if (ret != 0) {
+        WH_ERROR_PRINT("Failed to verify the RSA key written to flash %d\n", ret);
         return ret;
     }
 
